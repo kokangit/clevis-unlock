@@ -8,18 +8,16 @@ if [[ $1 -gt 0 ]]; then
     max_attempts=$1
 fi
 
-# Iterate a list of all block devices on the system
-for device in $(lsblk -o KNAME --paths --noheadings); do
+# Iterate all encrypted filesystems in /etc/crypttab
+while IFS= read -r line; do
+    device_name=$(echo "$line" | awk '{print $1}')
+    device=$(echo "$line" | awk '{print $2}')
+    if echo "$device" | grep -q -E "^UUID="; then
+        uuid=$(echo "$device" | cut -d "=" -f 2)
+        device="/dev/disk/by-uuid/$uuid"
+    fi
     # Determine if said block device is LUKS of any type
     if cryptsetup isLuks "${device}" 2>/dev/null; then
-        device_blkid=$(blkid | grep "^${device}:" | cut -d'"' -f2)
-        device_name=$(grep "UUID=${device_blkid}" /etc/crypttab | awk '{print $1}')
-
-        if [[ $device_blkid == "" ]]; then
-            echo "Ignoring ${device} because we couldn't find it in blkid output"
-            continue
-        fi
-
         if [[ $device_name == "" ]]; then
             echo "Ignoring ${device} because we could not find a matching entry in /etc/crypttab"
             continue
@@ -63,6 +61,6 @@ for device in $(lsblk -o KNAME --paths --noheadings); do
             exit_code=1
         fi
     fi
-done
+done < <(grep -E -v "^#" /etc/crypttab)
 
 exit ${exit_code}
